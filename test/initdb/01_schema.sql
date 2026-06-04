@@ -1,0 +1,61 @@
+-- Seed schema for the DuckDB Firebird extension test database.
+-- Exercises a broad range of Firebird column types so the type mapping
+-- in the extension can be validated end-to-end.
+
+SET SQL DIALECT 3;
+
+CREATE TABLE EMPLOYEES (
+    ID          INTEGER NOT NULL PRIMARY KEY,
+    FIRST_NAME  VARCHAR(50),
+    LAST_NAME   VARCHAR(50),
+    DEPARTMENT  VARCHAR(30),
+    SALARY      NUMERIC(12,2),
+    HIRED_ON    DATE,
+    ACTIVE      BOOLEAN
+);
+
+CREATE TABLE TYPE_GALLERY (
+    ID           INTEGER NOT NULL PRIMARY KEY,
+    C_SMALLINT   SMALLINT,
+    C_INTEGER    INTEGER,
+    C_BIGINT     BIGINT,
+    C_FLOAT      FLOAT,
+    C_DOUBLE     DOUBLE PRECISION,
+    C_NUMERIC    NUMERIC(15,4),
+    C_DECIMAL    DECIMAL(10,2),
+    C_CHAR       CHAR(10),
+    C_VARCHAR    VARCHAR(100),
+    C_DATE       DATE,
+    C_TIME       TIME,
+    C_TIMESTAMP  TIMESTAMP,
+    C_BOOLEAN    BOOLEAN,
+    C_BLOB_TEXT  BLOB SUB_TYPE TEXT,
+    C_BLOB_BIN   BLOB SUB_TYPE BINARY
+);
+
+COMMIT;
+
+INSERT INTO EMPLOYEES (ID, FIRST_NAME, LAST_NAME, DEPARTMENT, SALARY, HIRED_ON, ACTIVE)
+    VALUES (1, 'Ada',     'Lovelace',  'Engineering', 95000.00, DATE '2019-03-01', TRUE);
+INSERT INTO EMPLOYEES (ID, FIRST_NAME, LAST_NAME, DEPARTMENT, SALARY, HIRED_ON, ACTIVE)
+    VALUES (2, 'Alan',    'Turing',    'Research',    105000.50, DATE '2018-07-15', TRUE);
+INSERT INTO EMPLOYEES (ID, FIRST_NAME, LAST_NAME, DEPARTMENT, SALARY, HIRED_ON, ACTIVE)
+    VALUES (3, 'Grace',   'Hopper',    'Engineering', 99000.25, DATE '2020-01-20', FALSE);
+INSERT INTO EMPLOYEES (ID, FIRST_NAME, LAST_NAME, DEPARTMENT, SALARY, HIRED_ON, ACTIVE)
+    VALUES (4, 'Katherine', 'Johnson', NULL,         NULL,      NULL,             NULL);
+
+INSERT INTO TYPE_GALLERY (ID, C_SMALLINT, C_INTEGER, C_BIGINT, C_FLOAT, C_DOUBLE,
+                          C_NUMERIC, C_DECIMAL, C_CHAR, C_VARCHAR, C_DATE, C_TIME,
+                          C_TIMESTAMP, C_BOOLEAN, C_BLOB_TEXT, C_BLOB_BIN)
+    VALUES (1, 32000, 2000000000, 9000000000000, 3.14, 2.718281828,
+            12345.6789, 99.95, 'fixed', 'a varchar value',
+            DATE '2021-06-15', TIME '13:45:30', TIMESTAMP '2021-06-15 13:45:30.1234',
+            TRUE, 'some long text in a text blob', NULL);
+
+INSERT INTO TYPE_GALLERY (ID, C_SMALLINT, C_INTEGER, C_BIGINT, C_FLOAT, C_DOUBLE,
+                          C_NUMERIC, C_DECIMAL, C_CHAR, C_VARCHAR, C_DATE, C_TIME,
+                          C_TIMESTAMP, C_BOOLEAN, C_BLOB_TEXT, C_BLOB_BIN)
+    VALUES (2, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+            NULL, NULL, NULL, NULL);
+
+COMMIT;
