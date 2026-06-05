@@ -5,7 +5,9 @@ database and query its tables with native SQL — no `firebird_query(...)` table
 function required:
 
 ```sql
-INSTALL firebird FROM 'https://<your-pages-host>/firebird';   -- once
+-- once, in DuckDB v1.5.3 started with `-unsigned`:
+SET custom_extension_repository = 'https://archmaxai.github.io/duckdb_firebird';
+INSTALL firebird;
 LOAD firebird;
 
 ATTACH 'firebird://user:password@host:3050//path/to/db.fdb' AS fb (TYPE firebird);
@@ -14,7 +16,7 @@ ATTACH 'firebird://user:password@host:3050//path/to/db.fdb' AS fb (TYPE firebird
 SHOW ALL TABLES;
 SELECT * FROM fb.EMPLOYEES WHERE ACTIVE;
 SELECT d.NAME, count(*)
-  FROM fb.PROJECT p JOIN fb.DEPARTMENT d ON p.DEPT_ID = d.ID
+  FROM fb.PROJECTS p JOIN fb.DEPARTMENTS d ON p.DEPT_ID = d.ID
   GROUP BY d.NAME;
 ```
 

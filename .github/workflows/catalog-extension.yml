@@ -142,7 +142,7 @@ jobs:
             echo "<pre>"
             echo "# requires DuckDB ${DUCKDB_VERSION}"
             echo "duckdb -unsigned"
-            echo "SET custom_extension_repository = '${{ steps.pages.outputs.base_url || 'https://OWNER.github.io/REPO' }}';"
+            echo "SET custom_extension_repository = '${{ steps.pages.outputs.base_url || 'https://archmaxai.github.io/duckdb_firebird' }}';"
             echo "INSTALL firebird;"
             echo "LOAD firebird;"
             echo "ATTACH 'firebird://user:pass@host:3050//path/db.fdb' AS fb (TYPE firebird);"

@@ -37,11 +37,11 @@ duckdb -unsigned          # unsigned extensions must be allowed at startup
 ```
 
 ```sql
-SET custom_extension_repository = 'https://<owner>.github.io/<repo>';
+SET custom_extension_repository = 'https://archmaxai.github.io/duckdb_firebird';
 INSTALL firebird;          -- downloads the right platform binary
 LOAD firebird;
 
-ATTACH 'firebird://user:pass@host:3050//path/db.fdb' AS fb (TYPE firebird);
+ATTACH 'firebird://user:password@host:3050//path/db.fdb' AS fb (TYPE firebird);
 ```
 
 From Python:
@@ -49,7 +49,7 @@ From Python:
 ```python
 import duckdb
 con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
-con.execute("SET custom_extension_repository = 'https://<owner>.github.io/<repo>'")
+con.execute("SET custom_extension_repository = 'https://archmaxai.github.io/duckdb_firebird'")
 con.execute("INSTALL firebird")
 con.execute("LOAD firebird")
 ```
