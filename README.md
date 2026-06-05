@@ -1,5 +1,9 @@
 # duckdb_firebird
 
+[![Build & publish catalog extension](https://github.com/archmaxai/duckdb_firebird/actions/workflows/catalog-extension.yml/badge.svg)](https://github.com/archmaxai/duckdb_firebird/actions/workflows/catalog-extension.yml)
+[![DuckDB](https://img.shields.io/badge/DuckDB-v1.5.3-FFF000?logo=duckdb&logoColor=black)](https://github.com/duckdb/duckdb/releases/tag/v1.5.3)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A [DuckDB](https://duckdb.org) **storage/catalog extension** that attaches a
 **Firebird** database and lets you query its tables with native SQL, with
 **no native `fbclient` required**. It speaks the Firebird wire
@@ -139,14 +143,31 @@ docker compose up -d     # starts firebird on localhost:3050, seeds test.fdb
 ```
 
 Seed schema lives in `test/initdb/01_schema.sql` (`EMPLOYEES`, `DEPARTMENTS`,
-`PROJECTS` with foreign keys, plus a type-coverage table). The self-checking
-read-feature suite runs the full matrix of joins, aggregates, subqueries, window
-functions, set ops, filter/limit pushdown, and read-only enforcement:
+`PROJECTS` with foreign keys, plus a type-coverage table). There are two test
+suites, both covering joins, aggregates, subqueries, window functions, set ops,
+filter/limit pushdown, type fidelity, and read-only enforcement:
 
 ```bash
+# DuckDB sqllogictest harness (also run in CI). Needs the server above + a build.
+cd native && make test_release
+
+# Self-checking bash suite (manages the container for you).
 native/test_queries.sh   # FRESH=1 recreates the container to re-seed
 ```
 
+The sqllogictest fixtures live in [`native/test/sql/`](native/test/sql/) and run
+through DuckDB's unittest binary, so they execute on every CI build (Linux) and
+gate publishing.
+
 ## License
 
-MIT
+This project is licensed under the [MIT License](LICENSE).
+
+### Third-party components
+
+| Component | License | Use |
+|-----------|---------|-----|
+| [DuckDB](https://github.com/duckdb/duckdb) | MIT | Host database; the extension links its C++ API (ABI-locked to v1.5.3). |
+| [`rsfbclient`](https://github.com/fernandobatels/rsfbclient) | MIT | Pure-Rust Firebird wire protocol client (no native `fbclient` needed). A vendored, lightly patched copy of `rsfbclient-rust` lives in [`native/rust/vendor/`](native/rust/vendor/) — see its `PATCHES.md` for the batched-fetch / socket-timeout changes. |
+| [extension-ci-tools](https://github.com/duckdb/extension-ci-tools) | MIT | DuckDB's reusable extension build/CI makefiles. |
+| DuckDB [extension template](https://github.com/duckdb/extension-template) | MIT | Project scaffolding the `native/` layout is based on. |

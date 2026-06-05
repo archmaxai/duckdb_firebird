@@ -167,6 +167,10 @@ Artifacts:
 ```bash
 docker compose up -d        # from the repo root, starts a seeded Firebird
 
+# DuckDB sqllogictest harness (test/sql/*.test). This is what CI runs on every
+# Linux build, and it gates publishing. Requires a release build + the server.
+cd native && make test_release
+
 native/test_local.sh        # quick smoke test (catalog + a few scans)
 
 # Full self-checking read-feature suite: joins (inner/left/right/full/cross/

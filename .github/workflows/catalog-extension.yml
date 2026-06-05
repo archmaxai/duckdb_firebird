@@ -86,6 +86,27 @@ jobs:
             GEN=ninja make release
           fi
 
+      - name: Start Firebird test server (linux_amd64)
+        if: matrix.platform == 'linux_amd64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose up -d
+          echo "Waiting for Firebird to accept connections ..."
+          for _ in $(seq 1 60); do
+            if docker exec duckdb_firebird_test sh -lc \
+              "printf 'SELECT 1 FROM RDB\$DATABASE;\n' | /opt/firebird/bin/isql -user SYSDBA -password masterkey /var/lib/firebird/data/test.fdb" \
+              >/dev/null 2>&1; then
+              echo "Firebird is ready"; break
+            fi
+            sleep 2
+          done
+
+      - name: Run sqllogictest (linux_amd64)
+        if: matrix.platform == 'linux_amd64'
+        shell: bash
+        run: cd native && make test_release
+
       - name: Stage artifact
         shell: bash
         run: |

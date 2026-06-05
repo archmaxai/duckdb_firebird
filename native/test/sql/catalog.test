@@ -1,0 +1,213 @@
+# name: test/sql/catalog.test
+# description: Firebird catalog extension read features (ATTACH ... TYPE firebird)
+# group: [firebird]
+#
+# Requires a live Firebird test server seeded from test/initdb/01_schema.sql.
+# Locally: `docker compose up -d` from the repo root, then `make test_release`.
+# In CI the same compose stack is started before the unittest binary runs.
+
+require firebird
+
+statement ok
+ATTACH 'firebird://testuser:testpass@localhost:3050//var/lib/firebird/data/test.fdb' AS fb (TYPE firebird);
+
+# ---------------------------------------------------------------------------
+# Catalog introspection
+# ---------------------------------------------------------------------------
+
+# The four seeded user tables are visible through the catalog.
+query I
+SELECT count(*) FROM (SHOW ALL TABLES) WHERE database = 'fb';
+----
+4
+
+# Column metadata is exposed via information_schema.
+query I
+SELECT count(*) FROM information_schema.columns
+WHERE table_catalog = 'fb' AND table_name = 'EMPLOYEES';
+----
+8
+
+# ---------------------------------------------------------------------------
+# Basic scans, projection + filter pushdown
+# ---------------------------------------------------------------------------
+
+query I
+SELECT count(*) FROM fb.EMPLOYEES;
+----
+4
+
+# Constant comparison (pushed into the Firebird SELECT).
+query I
+SELECT count(*) FROM fb.EMPLOYEES WHERE SALARY > 96000;
+----
+2
+
+# IN list pushdown.
+query I
+SELECT count(*) FROM fb.EMPLOYEES WHERE DEPT_ID IN (1, 2);
+----
+3
+
+# IS NULL pushdown.
+query I
+SELECT count(*) FROM fb.EMPLOYEES WHERE DEPT_ID IS NULL;
+----
+1
+
+# Projection + filter + ordering.
+query T
+SELECT FIRST_NAME FROM fb.EMPLOYEES WHERE DEPT_ID = 1 ORDER BY ID;
+----
+Ada
+Grace
+
+# ---------------------------------------------------------------------------
+# Ordering + limit pushdown
+# ---------------------------------------------------------------------------
+
+query T
+SELECT FIRST_NAME FROM fb.EMPLOYEES ORDER BY SALARY DESC NULLS LAST LIMIT 1;
+----
+Alan
+
+query T
+SELECT FIRST_NAME FROM fb.EMPLOYEES ORDER BY ID LIMIT 2 OFFSET 1;
+----
+Alan
+Grace
+
+# ---------------------------------------------------------------------------
+# Joins
+# ---------------------------------------------------------------------------
+
+# Inner join + group by.
+query TI
+SELECT d.NAME, count(*) FROM fb.EMPLOYEES e
+JOIN fb.DEPARTMENTS d ON e.DEPT_ID = d.ID
+GROUP BY d.NAME ORDER BY d.NAME;
+----
+Engineering	2
+Research	1
+
+# Left join preserves the employee without a department (NULL).
+query TT
+SELECT e.FIRST_NAME, d.NAME FROM fb.EMPLOYEES e
+LEFT JOIN fb.DEPARTMENTS d ON e.DEPT_ID = d.ID
+ORDER BY e.ID;
+----
+Ada	Engineering
+Alan	Research
+Grace	Engineering
+Katherine	NULL
+
+# Three-table join.
+query I
+SELECT count(*) FROM fb.PROJECTS p
+JOIN fb.DEPARTMENTS d ON p.DEPT_ID = d.ID
+JOIN fb.EMPLOYEES e ON p.LEAD_ID = e.ID;
+----
+4
+
+# ---------------------------------------------------------------------------
+# Subqueries / CTEs / window functions / set ops
+# ---------------------------------------------------------------------------
+
+# Correlated-style IN subquery.
+query I
+SELECT count(*) FROM fb.DEPARTMENTS
+WHERE ID IN (SELECT DEPT_ID FROM fb.PROJECTS WHERE HOURS > 1000);
+----
+1
+
+# CTE.
+query I
+WITH dc AS (SELECT DEPT_ID, count(*) AS c FROM fb.EMPLOYEES GROUP BY DEPT_ID)
+SELECT c FROM dc WHERE DEPT_ID = 1;
+----
+2
+
+# Window function (rank within department by salary).
+query TI
+SELECT FIRST_NAME, rank() OVER (ORDER BY SALARY DESC NULLS LAST)
+FROM fb.EMPLOYEES WHERE DEPT_ID = 1 ORDER BY FIRST_NAME;
+----
+Ada	2
+Grace	1
+
+# UNION (distinct department ids across two tables).
+query I
+SELECT count(*) FROM (
+  SELECT DEPT_ID FROM fb.EMPLOYEES WHERE DEPT_ID IS NOT NULL
+  UNION
+  SELECT ID FROM fb.DEPARTMENTS
+);
+----
+3
+
+# ---------------------------------------------------------------------------
+# Cross-database join (Firebird table joined against a native DuckDB table)
+# ---------------------------------------------------------------------------
+
+statement ok
+CREATE TEMP TABLE bonus (emp_id INTEGER, amount INTEGER);
+
+statement ok
+INSERT INTO bonus VALUES (1, 5000), (2, 7000), (3, 1000);
+
+query TI
+SELECT e.FIRST_NAME, b.amount FROM fb.EMPLOYEES e
+JOIN bonus b ON e.ID = b.emp_id ORDER BY e.ID;
+----
+Ada	5000
+Alan	7000
+Grace	1000
+
+# ---------------------------------------------------------------------------
+# Type fidelity
+# ---------------------------------------------------------------------------
+
+query IIIT
+SELECT C_SMALLINT, C_INTEGER, C_BIGINT, C_VARCHAR FROM fb.TYPE_GALLERY WHERE ID = 1;
+----
+32000	2000000000	9000000000000	a varchar value
+
+query I
+SELECT count(*) FROM fb.EMPLOYEES WHERE ACTIVE;
+----
+2
+
+query T
+SELECT CAST(HIRED_ON AS VARCHAR) FROM fb.EMPLOYEES WHERE ID = 1;
+----
+2019-03-01
+
+# NULL fidelity across a fully-null row.
+query I
+SELECT count(*) FROM fb.TYPE_GALLERY WHERE C_INTEGER IS NULL;
+----
+1
+
+# ---------------------------------------------------------------------------
+# Read-only enforcement: every write / DDL must be rejected
+# ---------------------------------------------------------------------------
+
+statement error
+INSERT INTO fb.EMPLOYEES (ID, FIRST_NAME) VALUES (99, 'Nope');
+----
+
+statement error
+UPDATE fb.EMPLOYEES SET FIRST_NAME = 'X' WHERE ID = 1;
+----
+
+statement error
+DELETE FROM fb.EMPLOYEES WHERE ID = 1;
+----
+
+statement error
+CREATE TABLE fb.NEW_TABLE (X INTEGER);
+----
+
+statement error
+DROP TABLE fb.EMPLOYEES;
+----
