@@ -18,7 +18,7 @@ SELECT d.NAME, count(*)
   GROUP BY d.NAME;
 ```
 
-Unlike the table-function approach (on the `main` branch), this extension
+Unlike a plain table-function approach, this extension
 registers a Firebird **catalog**: tables and their column types are discovered
 from the Firebird system tables, appear in `SHOW ALL TABLES` /
 `information_schema`, and the query optimizer pushes **column projection**,
@@ -48,9 +48,9 @@ table-function flag for limit pushdown.
 > Joins/aggregations are **not** pushed to Firebird — like every DuckDB scanner
 > extension (`postgres`/`mysql`/`sqlite`), DuckDB scans the base tables and runs
 > joins/aggregations in its own engine. For a heavy join over a high-latency
-> link, prefer pre-filtering (so projection + filter pushdown shrink the rows) or
-> run the join as one native Firebird query on the `main` branch's
-> `firebird_query(...)` function.
+> link, prefer pre-filtering (so projection + filter pushdown shrink the rows),
+> or push the heavy join into Firebird itself (e.g. define it as a Firebird view
+> and scan that) so only the result crosses the network.
 
 > Status: **read-only**. `SELECT` and joins work; `INSERT`/`UPDATE`/`DELETE`/DDL
 > are intentionally rejected.

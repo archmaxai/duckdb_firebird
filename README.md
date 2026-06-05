@@ -1,36 +1,36 @@
 # duckdb_firebird
 
-A [DuckDB](https://duckdb.org) extension that reads **Firebird** databases
-directly, with no MySQL bridge and **no native `fbclient` required**. It speaks
-the Firebird wire protocol in pure Rust (via
-[`rsfbclient`](https://crates.io/crates/rsfbclient)) and exposes the results as
-DuckDB table functions, so you get correct column types instead of everything
-arriving as `VARCHAR`.
-
-This is "Option 2" from the bridge-conversion analysis: a real Rust extension
-built on the DuckDB C Extension API.
-
-## What you get
-
-Two table functions:
+A [DuckDB](https://duckdb.org) **storage/catalog extension** that attaches a
+**Firebird** database and lets you query its tables with native SQL — no MySQL
+bridge and **no native `fbclient` required**. It speaks the Firebird wire
+protocol in pure Rust (via [`rsfbclient`](https://crates.io/crates/rsfbclient)),
+compiled into a C++ extension that registers a real DuckDB catalog.
 
 ```sql
--- Run arbitrary Firebird SQL and stream the result into DuckDB.
-SELECT * FROM firebird_query('SELECT FIRST 10 * FROM ADDRESS', host => '...', ...);
+ATTACH 'firebird://user:password@host:3050//path/to/db.fdb' AS fb (TYPE firebird);
 
--- List the user tables in the database.
-SELECT * FROM firebird_tables(host => '...', ...);
+-- Firebird tables behave like native DuckDB tables:
+SHOW ALL TABLES;
+SELECT * FROM fb.EMPLOYEES WHERE ACTIVE;
+SELECT d.NAME, count(*) FROM fb.PROJECTS p JOIN fb.DEPARTMENTS d ON p.DEPT_ID = d.ID GROUP BY d.NAME;
 ```
 
-DuckDB does the rest — join, aggregate, export to Parquet/CSV, etc., over the
-rows pulled from Firebird.
+Tables and column types are discovered from the Firebird system catalog and show
+up in `SHOW ALL TABLES` / `information_schema`. The optimizer pushes **column
+projection**, **`WHERE` filters**, and **`LIMIT`** down into the Firebird query.
+
+> Status: **read-only**. `SELECT` and joins work; `INSERT`/`UPDATE`/`DELETE`/DDL
+> are intentionally rejected.
+
+Because it links DuckDB's internal C++ API, the binary is **version-locked to
+DuckDB v1.5.3** and must be loaded by a matching client.
 
 ## Install from GitHub (no build required)
 
-CI builds the extension for `linux_amd64`, `linux_arm64`, `osx_amd64`,
-`osx_arm64` and `windows_amd64` and publishes a DuckDB **custom extension
-repository** to GitHub Pages (see [`.github/workflows/extension.yml`](.github/workflows/extension.yml)).
-Once published, install it straight from DuckDB — no local build, no clone:
+CI builds the extension for `linux_amd64`, `linux_arm64`, and `osx_arm64` and
+publishes a DuckDB **custom extension repository** to GitHub Pages (see
+[`.github/workflows/catalog-extension.yml`](.github/workflows/catalog-extension.yml)).
+Install it straight from DuckDB v1.5.3 — no local build, no clone:
 
 ```bash
 duckdb -unsigned          # unsigned extensions must be allowed at startup
@@ -41,7 +41,7 @@ SET custom_extension_repository = 'https://<owner>.github.io/<repo>';
 INSTALL firebird;          -- downloads the right platform binary
 LOAD firebird;
 
-SELECT * FROM firebird_query('SELECT FIRST 5 * FROM ADDRESS', host => '...', ...);
+ATTACH 'firebird://user:pass@host:3050//path/db.fdb' AS fb (TYPE firebird);
 ```
 
 From Python:
@@ -55,75 +55,31 @@ con.execute("LOAD firebird")
 ```
 
 > The published binaries are **unsigned**, so `allow_unsigned_extensions` (or the
-> `-unsigned` CLI flag) is required. Tagged releases (`vX.Y.Z`) additionally
-> attach the raw `firebird.<platform>.duckdb_extension` files as GitHub Release
-> assets, which you can download and `LOAD '<path>'` directly.
+> `-unsigned` CLI flag) is required. Tagged releases (`catalog-vX.Y.Z`)
+> additionally attach the raw `firebird.<platform>.duckdb_extension` files as
+> GitHub Release assets, which you can download and `LOAD '<path>'` directly.
 >
 > Enable publishing once in the repo: **Settings → Pages → Build and deployment
 > → Source: GitHub Actions**. The repository URL to use is printed on the
 > published Pages site's landing page.
 
-## Quick start (build locally)
-
-```bash
-# 1. Build the loadable extension -> build/firebird.duckdb_extension
-./scripts/build.sh
-
-# 2. Use it (unsigned extensions must be enabled at startup)
-duckdb -unsigned
-```
-
-```sql
-LOAD 'build/firebird.duckdb_extension';
-
-SELECT *
-FROM firebird_query(
-  'SELECT FIRST 5 NAME, STANDARDCITY FROM ADDRESS',
-  host     => 'fd7a:115c:a1e0::7f38:6a39',   -- IPv6 is fine, no brackets needed here
-  user     => 'archmax_readonly',
-  password => 't34mw37k_1!',
-  database => 'C:\Teamwerk\Vertec\DB\VERTEC.fdb'  -- path as seen on the server
-);
-```
-
-From Python:
-
-```python
-import duckdb
-con = duckdb.connect(config={"allow_unsigned_extensions": "true"})
-con.execute("LOAD 'build/firebird.duckdb_extension'")
-con.sql("""
-  SELECT * FROM firebird_query('SELECT FIRST 5 * FROM ADDRESS',
-    host => '...', user => '...', password => '...', database => '...')
-""").show()
-```
-
 ## Connection parameters
 
-Both functions accept the same optional named parameters. Each connection field
-is resolved in this order:
+The `ATTACH` target is a DSN, and each connection field is resolved in this
+order:
 
-1. an explicit named parameter,
-2. the matching component of the `dsn` named parameter,
-3. the corresponding `FIREBIRD_*` environment variable,
-4. a built-in default.
+1. the matching component of the DSN, then
+2. the corresponding `FIREBIRD_*` environment variable, then
+3. a built-in default.
 
-| Named param | Env fallback        | Default     |
-|-------------|---------------------|-------------|
-| `host`      | `FIREBIRD_HOST`     | `localhost` |
-| `port`      | `FIREBIRD_PORT`     | `3050`      |
-| `user`      | `FIREBIRD_USER`     | `SYSDBA`    |
-| `password`  | `FIREBIRD_PASSWORD` | `masterkey` |
-| `database`  | `FIREBIRD_DATABASE` | *(required)*|
-| `dsn`       | —                   | —           |
-| `charset`   | `FIREBIRD_CHARSET`  | `UTF-8`     |
-
-If every connection field is provided via the environment, calls collapse to
-just the SQL:
-
-```sql
-SELECT * FROM firebird_query('SELECT FIRST 10 * FROM ADDRESS');
-```
+| Field      | Env fallback        | Default     |
+|------------|---------------------|-------------|
+| host       | `FIREBIRD_HOST`     | `localhost` |
+| port       | `FIREBIRD_PORT`     | `3050`      |
+| user       | `FIREBIRD_USER`     | `SYSDBA`    |
+| password   | `FIREBIRD_PASSWORD` | `masterkey` |
+| database   | `FIREBIRD_DATABASE` | *(required)*|
+| charset    | `FIREBIRD_CHARSET`  | `UTF-8`     |
 
 ### DSN form
 
@@ -137,99 +93,58 @@ firebird://user:password@host:port/database?charset=UTF8
   authority/path separator, as in JDBC Firebird):
   `firebird://SYSDBA:masterkey@127.0.0.1:3050//var/lib/firebird/data/test.fdb`
 
-Individual named parameters override the corresponding `dsn` component, so you
-can keep a base DSN and override just the SQL target database, etc.
-
-> **Tip:** for absolute paths the named `database` parameter is less fiddly than
-> the DSN form.
-
 ### A note on usernames
 
 Firebird treats unquoted login names case-insensitively and stores the SRP
 password verifier under the **upper-cased** name. The extension upper-cases the
-username for you, so `archmax_readonly` and `ARCHMAX_READONLY` both work. To use
-a genuinely case-sensitive login, wrap it in double quotes: `user => '"MixedCase"'`.
+username for you, so `archmax_readonly` and `ARCHMAX_READONLY` both work.
 
 ## Type mapping
 
-| Firebird                              | DuckDB      |
-|---------------------------------------|-------------|
-| `SMALLINT`, `INTEGER`, `BIGINT`       | `BIGINT`    |
-| `FLOAT`, `DOUBLE PRECISION`           | `DOUBLE`    |
-| `NUMERIC`, `DECIMAL`                  | `DOUBLE`*   |
-| `CHAR`, `VARCHAR`                     | `VARCHAR`   |
-| `BLOB SUB_TYPE TEXT`                  | `VARCHAR`   |
-| `BLOB SUB_TYPE BINARY`               | `BLOB`      |
-| `BOOLEAN`                             | `BOOLEAN`   |
-| `DATE`, `TIME`, `TIMESTAMP`           | `TIMESTAMP`*|
+| Firebird                        | DuckDB      |
+|---------------------------------|-------------|
+| `SMALLINT` / `INTEGER` / `BIGINT` | `SMALLINT` / `INTEGER` / `BIGINT` |
+| `FLOAT`                         | `FLOAT`     |
+| `DOUBLE PRECISION`              | `DOUBLE`    |
+| `NUMERIC` / `DECIMAL`           | `DOUBLE`*   |
+| `CHAR` / `VARCHAR`              | `VARCHAR`   |
+| `BLOB SUB_TYPE TEXT`            | `VARCHAR`   |
+| `BLOB SUB_TYPE BINARY`          | `BLOB`      |
+| `BOOLEAN`                       | `BOOLEAN`   |
+| `DATE` / `TIME` / `TIMESTAMP`   | `DATE` / `TIME` / `TIMESTAMP` |
 
-\* Caveats:
-- `NUMERIC`/`DECIMAL` come through as `DOUBLE`, so very large/high-scale values
-  may lose precision. Cast on the Firebird side (e.g. `CAST(col AS VARCHAR)`) if
-  you need exact decimals.
-- `DATE` and `TIME` are projected to `TIMESTAMP`. A bare `TIME` value gets the
-  current date attached; select `CAST(col AS VARCHAR)` from Firebird if you need
-  the raw time.
+\* `NUMERIC`/`DECIMAL` surface as `DOUBLE`, so very large/high-scale values may
+lose precision; cast on the Firebird side (e.g. `CAST(col AS VARCHAR)`) if you
+need exact decimals.
 
-Column types are determined from the data; for an all-`NULL` column the Firebird
-declared type code is used as a fallback.
+## Building & internals
 
-## Limitations (v1)
+The extension lives in [`native/`](native/). See
+[`native/README.md`](native/README.md) for build instructions, architecture, the
+pushdown details (projection / filter / limit), and the network-performance
+notes (batched fetch, bulk metadata, socket timeouts).
 
-- **Full materialization, no pushdown.** Each call runs your Firebird SQL and
-  loads the entire result set into memory before DuckDB sees it. There is no
-  projection or predicate pushdown, so `count(*)` over a wide table still pulls
-  every column. **Push selectivity into the Firebird SQL** (`FIRST n`, `WHERE`,
-  column lists, `COUNT(*)`) — that's where it belongs.
-- No `ATTACH ... (TYPE firebird)` catalog integration yet (the C Extension API
-  surface used here is table-function based).
-- Empty result sets with no derivable column metadata expose a single
-  placeholder `column0`.
+```bash
+native/setup.sh              # fetch the pinned DuckDB v1.5.3 source + ci-tools
+cd native && GEN=ninja make release   # -> build/release/extension/firebird/firebird.duckdb_extension
+```
 
 ## Development
-
-### Test Firebird server
 
 A throwaway Firebird 5 server with seed data is provided via Docker:
 
 ```bash
-docker compose up -d        # starts firebird on localhost:3050, seeds test.fdb
+docker compose up -d     # starts firebird on localhost:3050, seeds test.fdb
 ```
 
-Seed schema lives in `test/initdb/01_schema.sql` (an `EMPLOYEES` table and a
-`TYPE_GALLERY` table exercising every supported type). Connect as
-`SYSDBA` / `masterkey`, database `/var/lib/firebird/data/test.fdb`.
-
-### Build & test
+Seed schema lives in `test/initdb/01_schema.sql` (`EMPLOYEES`, `DEPARTMENTS`,
+`PROJECTS` with foreign keys, plus a type-coverage table). The self-checking
+read-feature suite runs the full matrix of joins, aggregates, subqueries, window
+functions, set ops, filter/limit pushdown, and read-only enforcement:
 
 ```bash
-./scripts/build.sh       # cargo build --release + metadata footer
-./scripts/test_local.sh  # bring up docker, build, run end-to-end queries
-cargo test               # unit tests (DSN parser)
+native/test_queries.sh   # FRESH=1 recreates the container to re-seed
 ```
-
-### How the build works
-
-`cargo build --release` produces a raw `target/release/libfirebird.dylib`
-(`.so` on Linux). DuckDB will not load a bare shared library — it needs a
-metadata footer identifying the platform, C API version and ABI type.
-`scripts/append_extension_metadata.py` appends that footer to produce
-`build/firebird.duckdb_extension`.
-
-The extension targets **C API `v1.2.0`**, so a single binary works across all
-DuckDB releases that share it (1.4.x, 1.5.x, …) — but it is **platform
-specific** (build once per `osx_arm64`, `linux_amd64`, …).
-
-## Distribution
-
-* **Just ship the file.** Hand someone `firebird.duckdb_extension`; they
-  `LOAD '<path>'` after starting `duckdb -unsigned`.
-* **Self-hosted repo.** Lay binaries out at
-  `https://host/${duckdb_version}/${platform}/firebird.duckdb_extension.gz` and
-  use `SET custom_extension_repository=...; INSTALL firebird;` (still requires
-  `SET allow_unsigned_extensions=true`).
-* **Community Extensions.** Submit to `duckdb/community-extensions` for signed,
-  no-flag `INSTALL firebird FROM community;`.
 
 ## License
 
