@@ -90,17 +90,28 @@ jobs:
         if: matrix.platform == 'linux_amd64'
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           docker compose up -d
-          echo "Waiting for Firebird to accept connections ..."
-          for _ in $(seq 1 60); do
-            if docker exec duckdb_firebird_test sh -lc \
-              "printf 'SELECT 1 FROM RDB\$DATABASE;\n' | /opt/firebird/bin/isql -user SYSDBA -password masterkey /var/lib/firebird/data/test.fdb" \
-              >/dev/null 2>&1; then
-              echo "Firebird is ready"; break
+          # Probe over the *network* (port 3050) using the just-built DuckDB +
+          # firebird extension, and require the seeded EMPLOYEES table to be
+          # queryable. A local `isql` probe inside the container goes green during
+          # the image's init/seed phase, before the wire listener is fully serving
+          # connections (which surfaces as "Invalid server response, missing bytes").
+          echo "Waiting for Firebird (network listener + seed) ..."
+          duckdb=native/build/release/duckdb
+          probe="ATTACH 'firebird://testuser:testpass@localhost:3050//var/lib/firebird/data/test.fdb' AS fb (TYPE firebird); SELECT count(*) FROM fb.EMPLOYEES;"
+          ready=0
+          for _ in $(seq 1 90); do
+            if "$duckdb" -c "$probe" >/dev/null 2>&1; then
+              ready=1; echo "Firebird is ready"; break
             fi
-            sleep 2
+            sleep 3
           done
+          if [ "$ready" -ne 1 ]; then
+            echo "Firebird did not become ready in time" >&2
+            docker compose logs --tail=200 firebird >&2 || true
+            exit 1
+          fi
 
       - name: Run sqllogictest (linux_amd64)
         if: matrix.platform == 'linux_amd64'
