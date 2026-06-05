@@ -2,16 +2,16 @@ name: Build & publish catalog extension
 
 # Builds the C++ Firebird *catalog* extension (native `ATTACH ... (TYPE firebird)`).
 #
-# Unlike the C-API table-function extension (see extension.yml), this binary links
-# DuckDB's internal C++ API and is therefore ABI-locked to a single DuckDB version
-# (v1.5.3). It can only be installed into a matching DuckDB v1.5.3 client.
+# This binary links DuckDB's internal C++ API and is therefore ABI-locked to a
+# single DuckDB version (v1.5.3). It can only be installed into a matching DuckDB
+# v1.5.3 client.
 
 on:
   push:
-    branches: [cpp-catalog-extension]
+    branches: [main]
     tags: ["catalog-v*"]
   pull_request:
-    branches: [cpp-catalog-extension]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -41,10 +41,6 @@ jobs:
           - platform: linux_arm64
             os: ubuntu-24.04-arm
             rust_target: aarch64-unknown-linux-gnu
-          - platform: osx_amd64
-            os: macos-13
-            rust_target: x86_64-apple-darwin
-            osx_arch: x86_64
           - platform: osx_arm64
             os: macos-14
             rust_target: aarch64-apple-darwin
