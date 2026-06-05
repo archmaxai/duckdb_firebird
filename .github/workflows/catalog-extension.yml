@@ -175,11 +175,30 @@ jobs:
           for dir in artifacts/catalog-*; do
             platform="$(basename "$dir")"
             platform="${platform#catalog-}"
-            cp "$dir/firebird.duckdb_extension" "release/firebird.${platform}.duckdb_extension"
+            # Asset names carry the targeted DuckDB version, since the binary is
+            # ABI-locked to it: firebird.<duckdb_version>.<platform>.duckdb_extension
+            cp "$dir/firebird.duckdb_extension" \
+              "release/firebird.${DUCKDB_VERSION}.${platform}.duckdb_extension"
           done
           ls -la release
       - name: Create / update release
         uses: softprops/action-gh-release@v2
         with:
+          name: "${{ github.ref_name }} — DuckDB ${{ env.DUCKDB_VERSION }}"
+          body: |
+            Firebird catalog extension built against **DuckDB ${{ env.DUCKDB_VERSION }}**.
+
+            The binary links DuckDB's internal C++ API and is **ABI-locked to
+            DuckDB ${{ env.DUCKDB_VERSION }}** — load it only from a matching client.
+
+            Install (DuckDB ${{ env.DUCKDB_VERSION }}, started with `-unsigned`):
+
+            ```sql
+            SET custom_extension_repository = 'https://archmaxai.github.io/duckdb_firebird';
+            INSTALL firebird;
+            LOAD firebird;
+            ```
+
+            Or download the asset for your platform below and `LOAD '<path>'`.
           files: release/*
           fail_on_unmatched_files: true

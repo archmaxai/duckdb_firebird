@@ -55,9 +55,10 @@ con.execute("LOAD firebird")
 ```
 
 > The published binaries are **unsigned**, so `allow_unsigned_extensions` (or the
-> `-unsigned` CLI flag) is required. Tagged releases (`catalog-vX.Y.Z`)
-> additionally attach the raw `firebird.<platform>.duckdb_extension` files as
-> GitHub Release assets, which you can download and `LOAD '<path>'` directly.
+> `-unsigned` CLI flag) is required. Tagged releases (`catalog-vX.Y.Z`) are
+> titled with the DuckDB version they target and attach the raw
+> `firebird.<duckdb_version>.<platform>.duckdb_extension` files as GitHub Release
+> assets, which you can download and `LOAD '<path>'` directly.
 >
 > Enable publishing once in the repo: **Settings → Pages → Build and deployment
 > → Source: GitHub Actions**. The repository URL to use is printed on the
