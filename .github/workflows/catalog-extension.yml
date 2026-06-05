@@ -1,0 +1,189 @@
+name: Build & publish catalog extension
+
+# Builds the C++ Firebird *catalog* extension (native `ATTACH ... (TYPE firebird)`).
+#
+# Unlike the C-API table-function extension (see extension.yml), this binary links
+# DuckDB's internal C++ API and is therefore ABI-locked to a single DuckDB version
+# (v1.5.3). It can only be installed into a matching DuckDB v1.5.3 client.
+
+on:
+  push:
+    branches: [cpp-catalog-extension]
+    tags: ["catalog-v*"]
+  pull_request:
+    branches: [cpp-catalog-extension]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: catalog-pages-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DUCKDB_VERSION: v1.5.3
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
+
+jobs:
+  build:
+    name: build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_amd64
+            os: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-gnu
+          - platform: linux_arm64
+            os: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+          - platform: osx_amd64
+            os: macos-13
+            rust_target: x86_64-apple-darwin
+            osx_arch: x86_64
+          - platform: osx_arm64
+            os: macos-14
+            rust_target: aarch64-apple-darwin
+            osx_arch: arm64
+    env:
+      DUCKDB_PLATFORM: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/rust/target
+          key: cargo-catalog-${{ matrix.platform }}-${{ hashFiles('native/rust/Cargo.toml') }}
+
+      - name: Fetch DuckDB + ci-tools
+        run: native/setup.sh
+
+      - name: Build extension
+        shell: bash
+        run: |
+          cd native
+          export CMAKE_BUILD_PARALLEL_LEVEL=4
+          if [ -n "${{ matrix.osx_arch }}" ]; then
+            GEN=ninja OSX_BUILD_ARCH=${{ matrix.osx_arch }} make release
+          else
+            GEN=ninja make release
+          fi
+
+      - name: Stage artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          src=native/build/release/extension/firebird/firebird.duckdb_extension
+          [ -f "$src" ] || { echo "missing $src" >&2; exit 1; }
+          mkdir -p out
+          cp "$src" out/firebird.duckdb_extension
+          gzip -9 -kf out/firebird.duckdb_extension
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: catalog-${{ matrix.platform }}
+          path: |
+            out/firebird.duckdb_extension
+            out/firebird.duckdb_extension.gz
+          if-no-files-found: error
+
+  deploy-pages:
+    name: publish to GitHub Pages
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Lay out extension repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          for dir in artifacts/catalog-*; do
+            platform="$(basename "$dir")"
+            platform="${platform#catalog-}"
+            gz="$dir/firebird.duckdb_extension.gz"
+            [ -f "$gz" ] || { echo "missing $gz" >&2; exit 1; }
+            mkdir -p "_site/${DUCKDB_VERSION}/$platform"
+            cp "$gz" "_site/${DUCKDB_VERSION}/$platform/firebird.duckdb_extension.gz"
+            echo "laid out $platform"
+          done
+          {
+            echo "<!doctype html><meta charset=utf-8><title>firebird catalog extension</title>"
+            echo "<h1>firebird catalog extension (native ATTACH)</h1>"
+            echo "<pre>"
+            echo "# requires DuckDB ${DUCKDB_VERSION}"
+            echo "duckdb -unsigned"
+            echo "SET custom_extension_repository = '${{ steps.pages.outputs.base_url || 'https://OWNER.github.io/REPO' }}';"
+            echo "INSTALL firebird;"
+            echo "LOAD firebird;"
+            echo "ATTACH 'firebird://user:pass@host:3050//path/db.fdb' AS fb (TYPE firebird);"
+            echo "</pre>"
+          } > _site/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+  release:
+    name: attach release assets
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/catalog-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Rename per-platform assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          for dir in artifacts/catalog-*; do
+            platform="$(basename "$dir")"
+            platform="${platform#catalog-}"
+            cp "$dir/firebird.duckdb_extension" "release/firebird.${platform}.duckdb_extension"
+          done
+          ls -la release
+      - name: Create / update release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          fail_on_unmatched_files: true

@@ -2,3 +2,11 @@
 /build
 .env
 test/data
+
+# C++ catalog extension (native/)
+native/build
+native/rust/target
+native/.cache
+# DuckDB + ci-tools are large checkouts; pulled at build time (see native/README.md)
+native/duckdb
+native/extension-ci-tools

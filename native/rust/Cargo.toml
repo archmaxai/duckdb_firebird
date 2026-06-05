@@ -1,0 +1,28 @@
+# Standalone workspace so cargo does not walk up into the C-API extension crate.
+[workspace]
+
+[package]
+name = "firebird_client"
+version = "0.1.0"
+edition = "2021"
+description = "C-ABI Firebird client (pure-Rust wire protocol) for the DuckDB Firebird catalog extension"
+license = "MIT"
+
+[lib]
+name = "firebird_client"
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+rsfbclient = { version = "0.26", default-features = false, features = ["pure_rust"] }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+
+# Use a locally-patched copy of the pure-Rust Firebird wire client. Upstream
+# 0.26 fetches exactly one row per network round-trip (`message count = 1`),
+# which is catastrophic over high-latency links (e.g. a Tailscale relay at
+# ~30 ms RTT every row). Our fork batches many rows per fetch and adds socket
+# timeouts. See vendor/rsfbclient-rust/PATCHES.md.
+[patch.crates-io]
+rsfbclient-rust = { path = "vendor/rsfbclient-rust" }
+
+[profile.release]
+opt-level = 2
