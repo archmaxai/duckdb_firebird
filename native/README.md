@@ -46,7 +46,7 @@ needs the full input). Implemented as an optimizer extension, since DuckDB has n
 table-function flag for limit pushdown.
 
 > Joins/aggregations are **not** pushed to Firebird — like every DuckDB scanner
-> extension (`postgres`/`mysql`/`sqlite`), DuckDB scans the base tables and runs
+> extension (`postgres`/`sqlite`), DuckDB scans the base tables and runs
 > joins/aggregations in its own engine. For a heavy join over a high-latency
 > link, prefer pre-filtering (so projection + filter pushdown shrink the rows),
 > or push the heavy join into Firebird itself (e.g. define it as a Firebird view
@@ -108,10 +108,10 @@ Examples:
 
 ```sql
 -- everything in the DSN
-ATTACH 'firebird://archmax_readonly:secret@10.0.0.5:3050//var/lib/firebird/data/test.fdb' AS fb (TYPE firebird);
+ATTACH 'firebird://user:password@host:3050//var/lib/firebird/data/test.fdb' AS fb (TYPE firebird);
 
 -- DSN + option overrides
-ATTACH 'firebird://10.0.0.5/test.fdb' AS fb (TYPE firebird, USER 'sysdba', PASSWORD 'masterkey');
+ATTACH 'firebird://host/test.fdb' AS fb (TYPE firebird, USER 'sysdba', PASSWORD 'masterkey');
 
 -- rely entirely on FIREBIRD_* environment variables
 ATTACH '' AS fb (TYPE firebird);

@@ -1,8 +1,8 @@
 # duckdb_firebird
 
 A [DuckDB](https://duckdb.org) **storage/catalog extension** that attaches a
-**Firebird** database and lets you query its tables with native SQL — no MySQL
-bridge and **no native `fbclient` required**. It speaks the Firebird wire
+**Firebird** database and lets you query its tables with native SQL, with
+**no native `fbclient` required**. It speaks the Firebird wire
 protocol in pure Rust (via [`rsfbclient`](https://crates.io/crates/rsfbclient)),
 compiled into a C++ extension that registers a real DuckDB catalog.
 
@@ -87,8 +87,8 @@ order:
 firebird://user:password@host:port/database?charset=UTF8
 ```
 
-* **IPv6 hosts** use bracket notation: `firebird://u:p@[fd7a:115c::1]:3050/db.fdb`
-* **Windows paths** are taken verbatim: `.../C:\Teamwerk\Vertec\DB\VERTEC.fdb`
+* **IPv6 hosts** use bracket notation: `firebird://user:password@[2001:db8::1]:3050/db.fdb`
+* **Windows paths** are taken verbatim: `.../C:\firebird\data\example.fdb`
 * **Absolute Unix paths** need a double slash (the first `/` is the
   authority/path separator, as in JDBC Firebird):
   `firebird://SYSDBA:masterkey@127.0.0.1:3050//var/lib/firebird/data/test.fdb`
@@ -97,7 +97,7 @@ firebird://user:password@host:port/database?charset=UTF8
 
 Firebird treats unquoted login names case-insensitively and stores the SRP
 password verifier under the **upper-cased** name. The extension upper-cases the
-username for you, so `archmax_readonly` and `ARCHMAX_READONLY` both work.
+username for you, so `myuser` and `MYUSER` both work.
 
 ## Type mapping
 
